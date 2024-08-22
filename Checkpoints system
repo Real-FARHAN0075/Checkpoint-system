@@ -1,0 +1,169 @@
+ -- [ Hey user! I have provide a script under made by FARHAN0075 Below. Please inspect it and grant the permisson for scripting.
+  If you are a scripter you sould know how this script works.For Its to work.
+For the scripts to work you need to make two folders called "SavingCheckpoints" and "Levels" 
+if you dont want to add them manually, You can just use --(Instance.new(folder)  and (Folder.Name = SavingCheckpoints)
+]
+
+local DataStoreService = game:GetService("DataStoreService")
+local CheckpointStore = DataStoreService:GetDataStore("CheckPointStore")
+local PlayersService = game:GetService("Players")
+
+local function SaveCurrent(Player)
+	local Leaderstats = Player:FindFirstChild("leaderstats")
+	if not Leaderstats then return end
+	local Stage = Leaderstats:FindFirstChild("Stage")
+	if not Stage then return end
+	local Success, Errormsg = pcall(function()
+		CheckpointStore:SetAsync(Player.UserId, { ["Stage"] = Stage.Value })
+	end)
+	if not Success then warn(Errormsg) end
+end
+
+local function LoadCurrent(Player, StageInstance)
+	local Data
+	local Success, Errormsg = pcall(function()
+		Data = CheckpointStore:GetAsync(Player.UserId)
+	end)
+	if not Success then warn(Errormsg) return end
+	if Data and typeof(Data) ~= 'nil' then
+		StageInstance.Value = Data.Stage
+	end
+end
+
+local function SetupCheckpointTouch()
+	local function GetStageCount(Player)
+		local Leaderstats = Player:FindFirstChild("leaderstats")
+		if not Leaderstats then return end
+		local Stage = Leaderstats:FindFirstChild("Stage")
+		if not Stage then return end
+		return Stage.Value, Stage
+	end
+
+	local function SetCheckpointTouch(v)
+		v.CanTouch = true
+		v.Enabled = false
+		local DelayTable = {}
+		local ObjectNumber = tonumber(v.Name)
+		v.Touched:Connect(function(Hit)
+			local Character = Hit:FindFirstAncestorWhichIsA("Model")
+			if not Character then return end
+			if table.find(DelayTable, Character.Name) then
+				return
+			end
+			local Player = PlayersService:GetPlayerFromCharacter(Character)
+			if not Player then return end
+			if not Player:FindFirstChild("LoadedCheckpoint") then return end
+			local CurrentStage, StageInstance = GetStageCount(Player)
+			if CurrentStage then
+				if ObjectNumber <= CurrentStage then return end
+				if (CurrentStage + 1) < ObjectNumber then
+					return
+				end
+				StageInstance.Value = ObjectNumber
+				table.insert(DelayTable, Character.Name)
+				task.wait(1)
+				for i, name in pairs(DelayTable) do
+					if name == Character.Name then
+						table.remove(DelayTable, i)
+						break
+					end
+				end
+				SaveCurrent(Player)
+			end
+		end)
+	end
+
+	for _, v in pairs(workspace:WaitForChild("SavingCheckpoints"):GetChildren()) do
+		SetCheckpointTouch(v)
+	end
+	workspace["SavingCheckpoints"].ChildAdded:Connect(function(v)
+		SetCheckpointTouch(v)
+	end)
+end
+
+SetupCheckpointTouch()
+
+PlayersService.PlayerAdded:Connect(function(Player)
+	local Leaderstats, Stage
+	Leaderstats = Instance.new("Folder")
+	Leaderstats.Name = "leaderstats"
+	Leaderstats.Parent = Player
+	Stage = Instance.new("IntValue")
+	Stage.Name = "Stage"
+	Stage.Value = 1
+	Stage.Parent = Leaderstats
+
+	local Folder = workspace:WaitForChild("SavingCheckpoints")
+	local function OnCharacter(Character)
+		local HumanoidRootPart
+		for i = 1, 10 do
+			if Character:FindFirstChild("HumanoidRootPart") then
+				HumanoidRootPart = Character.HumanoidRootPart
+				break
+			end
+			task.wait(1)
+		end
+		if HumanoidRootPart then
+			local StageSpawn = Folder:FindFirstChild(tostring(Stage.Value))
+			if StageSpawn then
+				HumanoidRootPart.CFrame = StageSpawn.CFrame + Vector3.new(0, 5, 0)
+			end
+		end
+	end
+
+	local function OnNewStage(StageNumber)
+		local team = game:GetService("Teams"):FindFirstChild(tostring(StageNumber))
+		if team then
+			Player.Team = team
+		end
+	end
+
+	LoadCurrent(Player, Stage)
+	local Loaded = Instance.new("BoolValue")
+	Loaded.Name = "LoadedCheckpoint"
+	Loaded.Parent = Player
+
+	if not Folder:FindFirstChild(tostring(Stage.Value)) then
+		local Max = -1
+		for _, v in pairs(Folder:GetChildren()) do
+			local Number = tonumber(v.Name)
+			if Number and Max < Number then
+				Max = Number
+			end
+		end
+		Stage.Value = Max
+	end
+
+	OnNewStage(Stage.Value)
+	Stage:GetPropertyChangedSignal("Value"):Connect(function()
+		OnNewStage(Stage.Value)
+	end)
+
+	if Player.Character then OnCharacter(Player.Character) end
+	Player.CharacterAdded:Connect(OnCharacter)
+
+	Player.Chatted:Connect(function(message)
+		if message:lower() == "!skip" then
+			if Stage.Value < 100 then
+				Stage.Value = Stage.Value + 1
+				OnNewStage(Stage.Value)
+				SaveCurrent(Player)
+			end
+		end
+	end)
+end)
+
+PlayersService.PlayerRemoving:Connect(function(Player)
+	if Player:FindFirstChild("LoadedCheckpoint") then
+		SaveCurrent(Player)
+	end
+end)
+
+game:BindToClose(function()
+	if game:GetService("RunService"):IsStudio() then task.wait(1) return end
+	for _, Player in pairs(PlayersService:GetPlayers()) do
+		if Player:FindFirstChild("LoadedCheckpoint") then
+			SaveCurrent(Player)
+		end
+	end
+end)
